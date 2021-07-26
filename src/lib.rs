@@ -98,7 +98,7 @@ impl<'a> MacroState<'a> {
                     match inp {
                         #(#nums => Ok(Self::#variants),)*
                         otherwise => {
-                            Err(#error_fn(format!("Unexpected `{}`: {}", #name, otherwise)))
+                            #error_fn(format!("Unexpected `{}`: {}", #name, otherwise))
                         },
                     }
                 }
@@ -113,7 +113,7 @@ impl<'a> MacroState<'a> {
                     match inp.as_str() {
                         #(#field_names => Ok(Self::#variants),)*
                         otherwise => {
-                            Err(#error_fn(format!("Unexpected `{}`: {}", #name, otherwise)))
+                            #error_fn(format!("Unexpected `{}`: {}", #name, otherwise))
                         },
                     }
                 }
@@ -246,9 +246,6 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let to_sql = state.to_sql();
     let try_from = state.try_from();
 
-    // let sql_type = syn::Ident::new(sql_type, span);
-
-
     (quote! {
         use diesel::{
             deserialize::{self, FromSql},
@@ -268,5 +265,4 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         #[automatically_derived]
         #try_from
     }).into()
-    // from_sql.into()
 }

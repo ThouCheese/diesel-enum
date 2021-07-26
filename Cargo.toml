@@ -1,0 +1,16 @@
+[package]
+name = "diesel-enum"
+version = "0.0.0"
+edition = "2018"
+description = "Interop between your enums and your database with diesel"
+keywords = ["diesel", "database", "enum"]
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = "1"
+proc-macro2 = "1"

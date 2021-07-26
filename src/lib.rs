@@ -74,6 +74,15 @@ struct MacroState<'a> {
 }
 
 impl<'a> MacroState<'a> {
+    fn repr(variant: &syn::Variant) -> Option<syn::Lit> {
+        let repr = variant
+            .attrs
+            .iter()
+            .find(|a| a.path.get_ident().map(|i| i == "val").unwrap_or(false))
+            .map(|a| a.tokens.to_string())?;
+        let trimmed = repr[1..].trim();
+        Some(syn::parse_str(&trimmed).unwrap())
+    }
 
     fn rust_type(sql_type: &str) -> syn::Ident {
         let name = match sql_type.to_string().as_str() {
@@ -88,17 +97,24 @@ impl<'a> MacroState<'a> {
     }
 
     fn try_from(&self) -> proc_macro2::TokenStream {
+        let span = proc_macro2::Span::call_site();
         let variants = self.variants.iter().map(|f| &f.ident);
         let error_fn = &self.error_fn;
         let name = self.name.to_string();
         let conversion = match self.rust_type.to_string().as_str() {
             "i16" | "i32" | "i64" => {
-                let nums = (0..).map(proc_macro2::Literal::u128_unsuffixed);
+                let nums = self
+                    .variants
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, &var)| (syn::LitInt::new(&idx.to_string(), span), var))
+                    .map(|(idx, var)| (syn::Lit::Int(idx), var))
+                    .map(|(idx, var)| Self::repr(var).unwrap_or(idx));
                 quote! {
                     match inp {
                         #(#nums => Ok(Self::#variants),)*
                         otherwise => {
-                            #error_fn(format!("Unexpected `{}`: {}", #name, otherwise))
+                            Err(#error_fn(format!("Unexpected `{}`: {}", #name, otherwise)))
                         },
                     }
                 }
@@ -107,13 +123,17 @@ impl<'a> MacroState<'a> {
                 let field_names = self
                     .variants
                     .iter()
-                    .map(|s| s.ident.to_string().to_lowercase());
+                    .map(|v| {
+                        use syn::{Lit::Str, LitStr};
+                        let fallback = v.ident.to_string().to_lowercase();
+                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    });
 
                 quote! {
                     match inp.as_str() {
                         #(#field_names => Ok(Self::#variants),)*
                         otherwise => {
-                            #error_fn(format!("Unexpected `{}`: {}", #name, otherwise))
+                            Err(#error_fn(format!("Unexpected `{}`: {}", #name, otherwise)))
                         },
                     }
                 }
@@ -130,6 +150,54 @@ impl<'a> MacroState<'a> {
 
                 fn try_from(inp: #rust_type) -> Result<Self, Self::Error> {
                     #conversion
+                }
+            }
+        }
+    }
+
+    fn into_impl(&self) -> proc_macro2::TokenStream {
+        let span = proc_macro2::Span::call_site();
+        let rust_type = &self.rust_type;
+        let name = &self.name;
+        let variants = self.variants.iter().map(|f| &f.ident);
+        let conversion = match self.rust_type.to_string().as_str() {
+            "i16" | "i32" | "i64" => {
+                let nums = self
+                    .variants
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, &var)| (syn::LitInt::new(&idx.to_string(), span), var))
+                    .map(|(idx, var)| (syn::Lit::Int(idx), var))
+                    .map(|(idx, var)| Self::repr(var).unwrap_or(idx));
+                quote! {
+                    match self {
+                        #(Self::#variants => #nums,)*
+                    }
+                }
+            },
+            "String" => {
+                let field_names = self
+                    .variants
+                    .iter()
+                    .map(|v| {
+                        use syn::{Lit::Str, LitStr};
+                        let fallback = v.ident.to_string().to_lowercase();
+                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    });
+
+                quote! {
+                    match self {
+                        #(Self::#variants => #field_names,)*
+                    }
+                }
+            },
+            _ => panic!(),
+        };
+
+        quote! {
+            impl Into<#rust_type> for #name {
+                fn into(self) -> #rust_type {
+                    #conversion.into()
                 }
             }
         }
@@ -155,20 +223,24 @@ impl<'a> MacroState<'a> {
     }
 
     fn to_sql(&self) -> proc_macro2::TokenStream {
+        let span = proc_macro2::Span::call_site();
         let sql_type = &self.sql_type;
-        let rust_type = &self.rust_type;
+        // let rust_type = &self.rust_type;
         let name = &self.name;
-        // let error_fn = &self.error_fn;
         let conversion = match self.rust_type.to_string().as_str() {
             "i16" | "i32" | "i64" => quote! {
-                ToSql::<#sql_type, Db>::to_sql(&(*self as #rust_type), out)
+                ToSql::<#sql_type, Db>::to_sql(self.into(), out)
             },
             "String" => {
                 let variants = self.variants.iter().map(|f| &f.ident);
                 let field_names = self
                     .variants
                     .iter()
-                    .map(|s| s.ident.to_string().to_lowercase());
+                    .map(|&v| {
+                        use syn::{Lit::Str, LitStr};
+                        let fallback = v.ident.to_string().to_lowercase();
+                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    });
 
                 quote! {
                     let s = match self {
@@ -213,17 +285,14 @@ fn get_attr_path<'a>(attrs: &'a [syn::Attribute], name: &str) -> syn::Path {
     syn::parse_str(trimmed).unwrap()
 }
 
-
 fn trim_attr(attr: &str) -> &str {
     let quoted = attr.trim()[1..].trim();
     &quoted[1..quoted.len() - 1]
 }
 
-#[proc_macro_derive(DbEnum, attributes(sql_type, error_fn, error_type))]
+#[proc_macro_derive(DbEnum, attributes(sql_type, error_fn, error_type, val))]
 pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    // let span = proc_macro2::Span::call_site();
-    
     let name = input.ident;
     let sql_type = get_attr_ident(&input.attrs, "sql_type");
     let error_fn = get_attr_path(&input.attrs, "error_fn");
@@ -245,24 +314,50 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let from_sql = state.from_sql();
     let to_sql = state.to_sql();
     let try_from = state.try_from();
+    let into = state.into_impl();
+    let name = state.name;
+    let sql_type = state.sql_type;
+    let error_type = state.error_type;
+    let error_mod = state.error_fn.segments.first().expect("need `error_fn`");
+    let error_type_str = dbg!(error_type
+        .segments
+        .iter()
+        .fold(String::new(), |a, b| a + &b.ident.to_string() + "::"));
+    let error_type_str = dbg!(&error_type_str[..error_type_str.len() - 2]);
+    let error_import = if error_mod.ident.to_string() == error_type_str {
+        quote! {}
+    } else {
+        quote! { use super::#error_mod; }
+    };
 
     (quote! {
-        use diesel::{
-            deserialize::{self, FromSql},
-            serialize::{self, Output, ToSql},
-        };
-        use std::{
-            convert::{TryFrom, TryInto},
-            io::Write,
-        };
+        #[allow(non_snake_case, unused_extern_crates, unused_imports)]
+        mod __impl_db_enum {
+            use super::{#name, #error_type};
+            #error_import
 
-        #[automatically_derived]
-        #from_sql
-        
-        #[automatically_derived]
-        #to_sql
-        
-        #[automatically_derived]
-        #try_from
+            use diesel::{
+                self,
+                deserialize::{self, FromSql},
+                serialize::{self, Output, ToSql},
+                sql_types::#sql_type,
+            };
+            use std::{
+                convert::{TryFrom, TryInto},
+                io::Write,
+            };
+
+            #[automatically_derived]
+            #from_sql
+            
+            #[automatically_derived]
+            #to_sql
+            
+            #[automatically_derived]
+            #try_from
+
+            #[automatically_derived]
+            #into
+        }
     }).into()
 }

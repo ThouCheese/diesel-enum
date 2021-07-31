@@ -229,7 +229,8 @@ impl<'a> MacroState<'a> {
         let name = &self.name;
         let conversion = match self.rust_type.to_string().as_str() {
             "i16" | "i32" | "i64" => quote! {
-                ToSql::<#sql_type, Db>::to_sql(self.into(), out)
+                let i = (*self.into());
+                ToSql::<#sql_type, Db>::to_sql(&i, out)
             },
             "String" => {
                 let variants = self.variants.iter().map(|f| &f.ident);

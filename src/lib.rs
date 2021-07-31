@@ -171,7 +171,7 @@ impl<'a> MacroState<'a> {
                     .map(|(idx, var)| Self::repr(var).unwrap_or(idx));
                 quote! {
                     match self {
-                        #(Self::#variants => #nums,)*
+                        #(Self::#variants => #nums as #rust_type,)*
                     }
                 }
             },
@@ -225,11 +225,11 @@ impl<'a> MacroState<'a> {
     fn to_sql(&self) -> proc_macro2::TokenStream {
         let span = proc_macro2::Span::call_site();
         let sql_type = &self.sql_type;
-        // let rust_type = &self.rust_type;
+        let rust_type = &self.rust_type;
         let name = &self.name;
         let conversion = match self.rust_type.to_string().as_str() {
             "i16" | "i32" | "i64" => quote! {
-                let i = (*self.into());
+                let i: #rust_type = (*self).into();
                 ToSql::<#sql_type, Db>::to_sql(&i, out)
             },
             "String" => {

@@ -320,11 +320,11 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let sql_type = state.sql_type;
     let error_type = state.error_type;
     let error_mod = state.error_fn.segments.first().expect("need `error_fn`");
-    let error_type_str = dbg!(error_type
+    let error_type_str = error_type
         .segments
         .iter()
-        .fold(String::new(), |a, b| a + &b.ident.to_string() + "::"));
-    let error_type_str = dbg!(&error_type_str[..error_type_str.len() - 2]);
+        .fold(String::new(), |a, b| a + &b.ident.to_string() + "::");
+    let error_type_str = &error_type_str[..error_type_str.len() - 2];
     let error_import = if error_mod.ident.to_string() == error_type_str {
         quote! {}
     } else {

@@ -1,7 +1,7 @@
 //! This crate allows the user to represent state in the database using Rust enums. This is achieved
 //! through a proc macro. First the macro looks at your chosen `sql_type`, and then it devises a
 //! corresponding Rust type. The mapping is as follows:
-//! 
+//!
 //! | SQL | Rust |
 //! |--|--|
 //! | `SmallInt` | `i16` |
@@ -10,7 +10,7 @@
 //! | `BigInt` | `i64` |
 //! | `VarChar` | `String` |
 //! | `Text` | `String` |
-//! 
+//!
 //!  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
 //! `TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
 //! and from the Rust type into the enum (`TryInto`).
@@ -20,13 +20,13 @@
 //! #[macro_use] extern crate diesel;
 //! use diesel_enum::DbEnum;
 //! use diesel::sql_types::SmallInt;
-//! 
+//!
 //! #[derive(Debug)]
 //! pub struct CustomError {
 //!     msg: String,
 //!     status: u16,
 //! }
-//! 
+//!
 //! impl CustomError {
 //!     fn not_found(msg: String) -> Self {
 //!         Self {
@@ -35,7 +35,7 @@
 //!         }
 //!     }
 //! }
-//! 
+//!
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
 //! #[sql_type = "SmallInt"]
 //! #[error_fn = "CustomError::not_found"]
@@ -118,16 +118,13 @@ impl<'a> MacroState<'a> {
                         },
                     }
                 }
-            },
+            }
             "String" => {
-                let field_names = self
-                    .variants
-                    .iter()
-                    .map(|v| {
-                        use syn::{Lit::Str, LitStr};
-                        let fallback = v.ident.to_string().to_lowercase();
-                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
-                    });
+                let field_names = self.variants.iter().map(|v| {
+                    use syn::{Lit::Str, LitStr};
+                    let fallback = v.ident.to_string().to_lowercase();
+                    Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                });
 
                 quote! {
                     match inp.as_str() {
@@ -137,7 +134,7 @@ impl<'a> MacroState<'a> {
                         },
                     }
                 }
-            },
+            }
             _ => panic!(),
         };
 
@@ -174,23 +171,20 @@ impl<'a> MacroState<'a> {
                         #(Self::#variants => #nums as #rust_type,)*
                     }
                 }
-            },
+            }
             "String" => {
-                let field_names = self
-                    .variants
-                    .iter()
-                    .map(|v| {
-                        use syn::{Lit::Str, LitStr};
-                        let fallback = v.ident.to_string().to_lowercase();
-                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
-                    });
+                let field_names = self.variants.iter().map(|v| {
+                    use syn::{Lit::Str, LitStr};
+                    let fallback = v.ident.to_string().to_lowercase();
+                    Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                });
 
                 quote! {
                     match self {
                         #(Self::#variants => #field_names,)*
                     }
                 }
-            },
+            }
             _ => panic!(),
         };
 
@@ -207,7 +201,7 @@ impl<'a> MacroState<'a> {
         let sql_type = &self.sql_type;
         let rust_type = &self.rust_type;
         let name = &self.name;
-        
+
         quote! {
             impl<Db> FromSql<#sql_type, Db> for #name
             where
@@ -234,14 +228,11 @@ impl<'a> MacroState<'a> {
             },
             "String" => {
                 let variants = self.variants.iter().map(|f| &f.ident);
-                let field_names = self
-                    .variants
-                    .iter()
-                    .map(|&v| {
-                        use syn::{Lit::Str, LitStr};
-                        let fallback = v.ident.to_string().to_lowercase();
-                        Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
-                    });
+                let field_names = self.variants.iter().map(|&v| {
+                    use syn::{Lit::Str, LitStr};
+                    let fallback = v.ident.to_string().to_lowercase();
+                    Self::repr(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                });
 
                 quote! {
                     let s = match self {
@@ -249,7 +240,7 @@ impl<'a> MacroState<'a> {
                     };
                     ToSql::<#sql_type, Db>::to_sql(s, out)
                 }
-            },
+            }
             _ => panic!(),
         };
 
@@ -310,30 +301,35 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         sql_type,
         rust_type,
         error_fn,
-        error_type
+        error_type,
     };
     let from_sql = state.from_sql();
     let to_sql = state.to_sql();
     let try_from = state.try_from();
     let into = state.into_impl();
     let name = state.name;
+    let mod_name = syn::Ident::new(
+        &format!("__impl_db_enum_{}", name),
+        proc_macro2::Span::call_site(),
+    );
     let sql_type = state.sql_type;
     let error_type = state.error_type;
     let error_mod = state.error_fn.segments.first().expect("need `error_fn`");
-    let error_type_str = dbg!(error_type
+    let error_type_str = error_type
         .segments
         .iter()
-        .fold(String::new(), |a, b| a + &b.ident.to_string() + "::"));
-    let error_type_str = dbg!(&error_type_str[..error_type_str.len() - 2]);
+        .fold(String::new(), |a, b| a + &b.ident.to_string() + "::");
+    let error_type_str = &error_type_str[..error_type_str.len() - 2];
     let error_import = if error_mod.ident.to_string() == error_type_str {
         quote! {}
     } else {
         quote! { use super::#error_mod; }
     };
+    println!("{}", quote! { #mod_name });
 
     (quote! {
         #[allow(non_snake_case, unused_extern_crates, unused_imports)]
-        mod __impl_db_enum {
+        mod #mod_name {
             use super::{#name, #error_type};
             #error_import
 
@@ -350,15 +346,16 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
             #[automatically_derived]
             #from_sql
-            
+
             #[automatically_derived]
             #to_sql
-            
+
             #[automatically_derived]
             #try_from
 
             #[automatically_derived]
             #into
         }
-    }).into()
+    })
+    .into()
 }

@@ -14,7 +14,7 @@ corresponding Rust type. The mapping is as follows:
  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
 `TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
 and from the Rust type into the enum (`TryInto`).
-//!
+
 ### Usage
 ```rust
 #[macro_use] extern crate diesel;
@@ -56,6 +56,21 @@ stored as `"ready"` in the database):
 #[error_type = "CustomError"]
 pub enum Status {
     /// Will be represented as `"ready"`.
+    Ready,
+    /// Will be represented as `"pending"`.
+    Pending,
+}
+```
+Another option is to manually override the values set for each or some of the variants. This is done
+using the `val` attribute:
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+#[sql_type = "VarChar"]
+#[error_fn = "CustomError::not_found"]
+#[error_type = "CustomError"]
+pub enum Status {
+    /// Will be represented as `"reddy"`.
+    #[val = "reddy"]
     Ready,
     /// Will be represented as `"pending"`.
     Pending,

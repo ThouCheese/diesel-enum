@@ -91,7 +91,7 @@ impl<'a> MacroState<'a> {
             .find(|a| a.path.get_ident().map(|i| i == "val").unwrap_or(false))
             .map(|a| a.tokens.to_string())?;
         let trimmed = val[1..].trim();
-        Some(syn::parse_str(&trimmed).unwrap())
+        Some(syn::parse_str(trimmed).unwrap())
     }
 
     fn rust_type(sql_type: &syn::Ident) -> Result<syn::Ident, proc_macro2::TokenStream> {
@@ -140,7 +140,7 @@ impl<'a> MacroState<'a> {
                 let field_names = self.variants.iter().map(|v| {
                     use syn::{Lit::Str, LitStr};
                     let fallback = v.ident.to_string().to_lowercase();
-                    Self::val(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    Self::val(v).unwrap_or_else(|| Str(LitStr::new(&fallback, span)))
                 });
 
                 quote! {
@@ -193,7 +193,7 @@ impl<'a> MacroState<'a> {
                 let field_names = self.variants.iter().map(|v| {
                     use syn::{Lit::Str, LitStr};
                     let fallback = v.ident.to_string().to_lowercase();
-                    Self::val(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    Self::val(v).unwrap_or_else(|| Str(LitStr::new(&fallback, span)))
                 });
 
                 quote! {
@@ -248,7 +248,7 @@ impl<'a> MacroState<'a> {
                 let field_names = self.variants.iter().map(|&v| {
                     use syn::{Lit::Str, LitStr};
                     let fallback = v.ident.to_string().to_lowercase();
-                    Self::val(v).unwrap_or(Str(LitStr::new(&fallback, span)))
+                    Self::val(v).unwrap_or_else(|| Str(LitStr::new(&fallback, span)))
                 });
 
                 quote! {
@@ -292,8 +292,8 @@ fn get_attr_ident<'a>(
     Ok(syn::Ident::new(trimmed, stream.span()))
 }
 
-fn get_attr_path<'a>(
-    attrs: &'a [syn::Attribute],
+fn get_attr_path(
+    attrs: &[syn::Attribute],
     name: &str,
 ) -> Result<syn::Path, proc_macro2::TokenStream> {
     let stream = attrs
@@ -349,6 +349,10 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let try_from = state.try_from();
     let into = state.into_impl();
     let name = state.name;
+    let mod_name = syn::Ident::new(
+        &format!("__impl_db_enum_{}", name),
+        proc_macro2::Span::call_site(),
+    );
     let sql_type = state.sql_type;
     let error_type = state.error_type;
     let error_mod = state.error_fn.segments.first().expect("need `error_fn`");
@@ -357,15 +361,16 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .iter()
         .fold(String::new(), |a, b| a + &b.ident.to_string() + "::");
     let error_type_str = &error_type_str[..error_type_str.len() - 2];
-    let error_import = if error_mod.ident.to_string() == error_type_str {
+    let error_import = if error_mod.ident == error_type_str {
         quote! {}
     } else {
         quote! { use super::#error_mod; }
     };
+    println!("{}", quote! { #mod_name });
 
     (quote! {
         #[allow(non_snake_case, unused_extern_crates, unused_imports)]
-        mod __impl_db_enum {
+        mod #mod_name {
             use super::{#name, #error_type};
             #error_import
 

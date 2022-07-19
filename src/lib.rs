@@ -366,7 +366,6 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     } else {
         quote! { use super::#error_mod; }
     };
-    println!("{}", quote! { #mod_name });
 
     (quote! {
         #[allow(non_snake_case, unused_extern_crates, unused_imports)]

@@ -1,6 +1,6 @@
 [package]
 name = "diesel-enum"
-version = "0.0.6"
+version = "0.1.0"
 authors = ["Luuk Wester <luuk.wester@gmail.com>"]
 edition = "2018"
 description = "Interop between your enums and your database with diesel"

@@ -36,7 +36,7 @@
 //!     }
 //! }
 //!
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
 //! #[sql_type = "SmallInt"]
 //! #[error_fn = "CustomError::not_found"]
 //! #[error_type = "CustomError"]
@@ -50,7 +50,7 @@
 //! Alternatively you can use strings, with will be cast to lowercase. (e.g. `Status::Ready` will be
 //! stored as `"ready"` in the database):
 //! ```rust
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
 //! #[sql_type = "VarChar"]
 //! #[error_fn = "CustomError::not_found"]
 //! #[error_type = "CustomError"]
@@ -225,7 +225,7 @@ impl<'a> MacroState<'a> {
                 Db: diesel::backend::Backend,
                 #rust_type: FromSql<#sql_type, Db>
             {
-                fn from_sql(bytes: Option<&Db::RawValue>) -> deserialize::Result<Self> {
+                fn from_sql(bytes: diesel::backend::RawValue<Db>) -> deserialize::Result<Self> {
                     let s = <#rust_type as FromSql<#sql_type, Db>>::from_sql(bytes)?;
                     Ok(s.try_into().unwrap())
                 }
@@ -237,33 +237,55 @@ impl<'a> MacroState<'a> {
         let span = proc_macro2::Span::call_site();
         let sql_type = &self.sql_type;
         let rust_type = &self.rust_type;
+        let rust_type_borrowed = if rust_type == "String" {
+            quote! { str }
+        } else {
+            quote! { #rust_type }
+        };
         let name = &self.name;
         let conversion = match self.rust_type.to_string().as_str() {
-            "i16" | "i32" | "i64" => quote! {
-                let i: #rust_type = (*self).into();
-                ToSql::<#sql_type, Db>::to_sql(&i, out)
-            },
+            "i16" | "i32" | "i64" => {
+                let variants = self.variants.iter().map(|f| &f.ident);
+                let values = self.variants.iter().map(|&v| {
+                    let ident = &v.ident;
+                    quote! {
+                        (Self::#ident as #rust_type).to_sql(out)
+                    }
+                });
+
+                quote! {
+                    match self {
+                        #(Self::#variants => #values,)*
+                    }
+                }
+            }
             "String" => {
                 let variants = self.variants.iter().map(|f| &f.ident);
                 let field_names = self.variants.iter().map(|&v| {
                     use syn::{Lit::Str, LitStr};
                     let fallback = v.ident.to_string().to_lowercase();
-                    Self::val(v).unwrap_or_else(|| Str(LitStr::new(&fallback, span)))
+                    let val = Self::val(v).unwrap_or_else(|| Str(LitStr::new(&fallback, span)));
+                    quote! {
+                        #val.to_sql(out)
+                    }
                 });
 
                 quote! {
-                    let s = match self {
+                    match self {
                         #(Self::#variants => #field_names,)*
-                    };
-                    ToSql::<#sql_type, Db>::to_sql(s, out)
+                    }
                 }
             }
             _ => panic!(),
         };
 
         quote! {
-            impl<Db: diesel::backend::Backend> ToSql<#sql_type, Db> for #name {
-                fn to_sql<W: Write>(&self, out: &mut Output<'_, W, Db>) -> serialize::Result {
+            impl<Db> ToSql<#sql_type, Db> for #name
+            where
+                Db: diesel::backend::Backend,
+                #rust_type_borrowed: ToSql<#sql_type, Db>
+            {
+                fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Db>) -> serialize::Result {
                     #conversion
                 }
             }

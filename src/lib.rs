@@ -37,9 +37,9 @@
 //! }
 //!
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
-//! #[sql_type = "SmallInt"]
-//! #[error_fn = "CustomError::not_found"]
-//! #[error_type = "CustomError"]
+//! #[diesel(sql_type = SmallInt)]
+//! #[diesel_enum(error_fn = CustomError::not_found)]
+//! #[diesel_enum(error_type = CustomError)]
 //! pub enum Status {
 //!     /// Will be represented as 0.
 //!     Ready,
@@ -51,9 +51,9 @@
 //! stored as `"ready"` in the database):
 //! ```rust
 //! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
-//! #[sql_type = "VarChar"]
-//! #[error_fn = "CustomError::not_found"]
-//! #[error_type = "CustomError"]
+//! #[diesel(sql_type = VarChar)]
+//! #[diesel_enum(error_fn = CustomError::not_found)]
+//! #[diesel_enum(error_type = CustomError)]
 //! pub enum Status {
 //!     /// Will be represented as `"ready"`.
 //!     Ready,
@@ -162,7 +162,7 @@ impl<'a> MacroState<'a> {
             impl TryFrom<#rust_type> for #name {
                 type Error = #error_type;
 
-                fn try_from(inp: #rust_type) -> Result<Self, Self::Error> {
+                fn try_from(inp: #rust_type) -> std::result::Result<Self, Self::Error> {
                     #conversion
                 }
             }
@@ -295,62 +295,69 @@ impl<'a> MacroState<'a> {
 
 fn get_attr_ident<'a>(
     attrs: &'a [syn::Attribute],
-    name: &str,
+    outer: &str,
+    inner: &str,
 ) -> Result<syn::Ident, proc_macro2::TokenStream> {
     let stream = attrs
         .iter()
-        .find(|a| a.path.get_ident().map(|i| i == name).unwrap_or(false))
+        .filter(|a| a.path.get_ident().map(|i| i == outer).unwrap_or(false))
         .map(|a| &a.tokens)
+        .find(|s| s.to_string().contains(inner))
         .ok_or_else(|| {
             let span = proc_macro2::Span::call_site();
             let msg = format!(
                 "Usage of the `DbEnum` macro requires the `{}` attribute to be present",
-                name
+                outer
             );
             error(span, &msg)
         })?;
     let s = stream.to_string();
-    let trimmed = trim_attr(&s);
-    Ok(syn::Ident::new(trimmed, stream.span()))
+    let s = s
+        .split("=")
+        .nth(1)
+        .ok_or_else(|| error(stream.span(), "malformed attribute"))?
+        .trim_matches(|c| " )".contains(c));
+    Ok(syn::Ident::new(s, stream.span()))
 }
 
 fn get_attr_path(
     attrs: &[syn::Attribute],
-    name: &str,
+    outer: &str,
+    inner: &str,
 ) -> Result<syn::Path, proc_macro2::TokenStream> {
     let stream = attrs
         .iter()
-        .find(|a| a.path.get_ident().map(|i| i == name).unwrap_or(false))
+        .filter(|a| a.path.get_ident().map(|i| i == outer).unwrap_or(false))
         .map(|a| &a.tokens)
+        .find(|s| s.to_string().contains(inner))
         .ok_or_else(|| {
             let span = proc_macro2::Span::call_site();
             let msg = format!(
                 "Usage of the `DbEnum` macro requires the `{}` attribute to be present",
-                name
+                outer
             );
             error(span, &msg)
         })?;
     let s = stream.to_string();
-    let trimmed = trim_attr(&s);
-    Ok(syn::parse_str(trimmed).unwrap())
-}
-
-fn trim_attr(attr: &str) -> &str {
-    let quoted = attr.trim()[1..].trim();
-    &quoted[1..quoted.len() - 1]
+    let s = s
+        .split("=")
+        .nth(1)
+        .ok_or_else(|| error(stream.span(), "malformed attribute"))?
+        .trim_matches(|c| " )".contains(c));
+    syn::parse_str(s).map_err(|_| error(stream.span(), "Invalid path"))
 }
 
 fn error(span: proc_macro2::Span, message: &str) -> proc_macro2::TokenStream {
     syn::Error::new(span, message).into_compile_error()
 }
 
-#[proc_macro_derive(DbEnum, attributes(sql_type, error_fn, error_type, val))]
+#[proc_macro_derive(DbEnum, attributes(diesel, diesel_enum))]
 pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let name = input.ident;
-    let sql_type = try_or_return!(get_attr_ident(&input.attrs, "sql_type"));
-    let error_fn = try_or_return!(get_attr_path(&input.attrs, "error_fn"));
-    let error_type = try_or_return!(get_attr_path(&input.attrs, "error_type"));
+    let sql_type = try_or_return!(get_attr_ident(&input.attrs, "diesel", "sql_type"));
+    let error_fn = try_or_return!(get_attr_path(&input.attrs, "diesel_enum", "error_fn"));
+    let error_type = try_or_return!(get_attr_path(&input.attrs, "diesel_enum", "error_type"));
     let rust_type = try_or_return!(MacroState::rust_type(&sql_type));
     let span = proc_macro2::Span::call_site();
     let data = match input.data {

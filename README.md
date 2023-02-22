@@ -12,12 +12,12 @@ corresponding Rust type. The mapping is as follows:
 | `Text` | `String` |
 
  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
-`TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
+`TryFrom` impl, which allow conversion between the Sql type and the enum (`FromSql` and `ToSql`),
 and from the Rust type into the enum (`TryInto`).
 
 ### Usage
 ```rust
-#[macro_use] extern crate diesel;
+extern crate diesel;
 use diesel_enum::DbEnum;
 use diesel::sql_types::SmallInt;
 

@@ -17,7 +17,6 @@ and from the Rust type into the enum (`TryInto`).
 
 ### Usage
 ```rust
-extern crate diesel;
 use diesel_enum::DbEnum;
 use diesel::sql_types::SmallInt;
 

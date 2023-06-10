@@ -12,14 +12,13 @@ corresponding Rust type. The mapping is as follows:
 | `Text` | `String` |
 
  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
-`TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
+`TryFrom` impl, which allow conversion between the Sql type and the enum (`FromSql` and `ToSql`),
 and from the Rust type into the enum (`TryInto`).
 
 ### Usage
 ```rust
-#[macro_use] extern crate diesel;
 use diesel_enum::DbEnum;
-use diesel::sql_types::SmallInt;
+use diesel::{sql_types::SmallInt, expression::AsExpression, deserialize::FromSqlRow};
 
 #[derive(Debug)]
 pub struct CustomError {
@@ -37,9 +36,9 @@ impl CustomError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
-#[sql_type = "SmallInt"]
-#[error_fn = "CustomError::not_found"]
-#[error_type = "CustomError"]
+#[diesel(sql_type = SmallInt)]
+#[diesel_enum(error_fn = CustomError::not_found)]
+#[diesel_enum(error_type = CustomError)
 pub enum Status {
     /// Will be represented as 0.
     Ready,
@@ -51,9 +50,9 @@ Alternatively you can use strings, with will be cast to lowercase. (e.g. `Status
 stored as `"ready"` in the database):
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
-#[sql_type = "VarChar"]
-#[error_fn = "CustomError::not_found"]
-#[error_type = "CustomError"]
+#[diesel(sql_type = VarChar)]
+#[diesel_enum(error_fn = CustomError::not_found)]
+#[diesel_enum(error_type = CustomError)]
 pub enum Status {
     /// Will be represented as `"ready"`.
     Ready,
@@ -65,9 +64,9 @@ Another option is to manually override the values set for each or some of the va
 using the `val` attribute:
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
-#[sql_type = "VarChar"]
-#[error_fn = "CustomError::not_found"]
-#[error_type = "CustomError"]
+#[diesel(sql_type = VarChar)]
+#[diesel_enum(error_fn = CustomError::not_found)]
+#[diesel_enum(error_type = CustomError)]
 pub enum Status {
     /// Will be represented as `"reddy"`.
     #[val = "reddy"]

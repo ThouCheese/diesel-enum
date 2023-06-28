@@ -2,14 +2,14 @@
 //! through a proc macro. First the macro looks at your chosen `sql_type`, and then it devises a
 //! corresponding Rust type. The mapping is as follows:
 //!
-//! | SQL | Rust |
-//! |--|--|
-//! | `SmallInt` | `i16` |
-//! | `Integer` | `i32` |
-//! | `Int` | `i32` |
-//! | `BigInt` | `i64` |
-//! | `VarChar` | `String` |
-//! | `Text` | `String` |
+//! | SQL        | Rust     |
+//! | ---------- | -------- |
+//! | `SmallInt` | `i16`    |
+//! | `Integer`  | `i32`    |
+//! | `Int`      | `i32`    |
+//! | `BigInt`   | `i64`    |
+//! | `VarChar`  | `String` |
+//! | `Text`     | `String` |
 //!
 //!  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
 //! `TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
@@ -19,9 +19,10 @@
 //! ```rust
 //! #[macro_use] extern crate diesel;
 //! use diesel_enum::DbEnum;
-//! use diesel::sql_types::SmallInt;
+//! use diesel::{deserialize::FromSqlRow, sql_types::SmallInt};
 //!
-//! #[derive(Debug)]
+//! #[derive(Debug, thiserror::Error)]
+//! #[error("CustomError: {msg}, {status}")]
 //! pub struct CustomError {
 //!     msg: String,
 //!     status: u16,
@@ -36,7 +37,7 @@
 //!     }
 //! }
 //!
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, DbEnum)]
 //! #[diesel(sql_type = SmallInt)]
 //! #[diesel_enum(error_fn = CustomError::not_found)]
 //! #[diesel_enum(error_type = CustomError)]
@@ -50,7 +51,7 @@
 //! Alternatively you can use strings, with will be cast to lowercase. (e.g. `Status::Ready` will be
 //! stored as `"ready"` in the database):
 //! ```rust
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, DbEnum)]
 //! #[diesel(sql_type = VarChar)]
 //! #[diesel_enum(error_fn = CustomError::not_found)]
 //! #[diesel_enum(error_type = CustomError)]
@@ -227,7 +228,8 @@ impl<'a> MacroState<'a> {
             {
                 fn from_sql(bytes: <Db as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
                     let s = <#rust_type as FromSql<#sql_type, Db>>::from_sql(bytes)?;
-                    Ok(s.try_into().unwrap())
+                    let v = s.try_into()?;
+                    Ok(v)
                 }
             }
         }
@@ -293,8 +295,8 @@ impl<'a> MacroState<'a> {
     }
 }
 
-fn get_attr_ident<'a>(
-    attrs: &'a [syn::Attribute],
+fn get_attr_ident(
+    attrs: &[syn::Attribute],
     outer: &str,
     inner: &str,
 ) -> Result<syn::Ident, proc_macro2::TokenStream> {
@@ -313,7 +315,7 @@ fn get_attr_ident<'a>(
         })?;
     let s = stream.to_string();
     let s = s
-        .split("=")
+        .split('=')
         .nth(1)
         .ok_or_else(|| error(stream.span(), "malformed attribute"))?
         .trim_matches(|c| " )".contains(c));
@@ -340,7 +342,7 @@ fn get_attr_path(
         })?;
     let s = stream.to_string();
     let s = s
-        .split("=")
+        .split('=')
         .nth(1)
         .ok_or_else(|| error(stream.span(), "malformed attribute"))?
         .trim_matches(|c| " )".contains(c));

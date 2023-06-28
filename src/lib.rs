@@ -91,7 +91,7 @@ impl<'a> MacroState<'a> {
             .find(|a| a.path.get_ident().map(|i| i == "val").unwrap_or(false))
             .map(|a| a.tokens.to_string())?;
         let trimmed = val[1..].trim();
-        Some(syn::parse_str(trimmed).unwrap())
+        syn::parse_str(trimmed).ok()
     }
 
     fn rust_type(sql_type: &syn::Ident) -> Result<syn::Ident, proc_macro2::TokenStream> {
@@ -225,7 +225,7 @@ impl<'a> MacroState<'a> {
                 Db: diesel::backend::Backend,
                 #rust_type: FromSql<#sql_type, Db>
             {
-                fn from_sql(bytes: diesel::backend::RawValue<Db>) -> deserialize::Result<Self> {
+                fn from_sql(bytes: <Db as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
                     let s = <#rust_type as FromSql<#sql_type, Db>>::from_sql(bytes)?;
                     Ok(s.try_into().unwrap())
                 }

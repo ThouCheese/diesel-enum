@@ -62,6 +62,23 @@
 //!     Pending,
 //! }
 //! ```
+//!
+//! Another option is to manually override the values set for each or some of the variants. This is done
+//! using the `val` attribute:
+//!
+//! ```rust
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+//! #[diesel(sql_type = VarChar)]
+//! #[diesel_enum(error_fn = CustomError::not_found)]
+//! #[diesel_enum(error_type = CustomError)]
+//! pub enum Status {
+//!     /// Will be represented as `"reddy"`.
+//!     #[val = "reddy"]
+//!     Ready,
+//!     /// Will be represented as `"pending"`.
+//!     Pending,
+//! }
+//! ```
 
 use quote::quote;
 use syn::spanned::Spanned;
@@ -90,9 +107,17 @@ impl<'a> MacroState<'a> {
             .attrs
             .iter()
             .find(|a| a.path.get_ident().map(|i| i == "val").unwrap_or(false))
-            .map(|a| a.tokens.to_string())?;
-        let trimmed = val[1..].trim();
-        syn::parse_str(trimmed).ok()
+            .map(|a| a.tokens.to_string());
+        match val {
+            Some(val) => {
+                let trimmed = val[1..].trim();
+                syn::parse_str(trimmed).ok()
+            }
+            _ => variant.discriminant.as_ref().and_then(|(_, d)| match d {
+                syn::Expr::Lit(syn::ExprLit { lit, .. }) => Some(lit.to_owned()),
+                _ => None,
+            }),
+        }
     }
 
     fn rust_type(sql_type: &syn::Ident) -> Result<syn::Ident, proc_macro2::TokenStream> {

@@ -2,14 +2,14 @@
 //! through a proc macro. First the macro looks at your chosen `sql_type`, and then it devises a
 //! corresponding Rust type. The mapping is as follows:
 //!
-//! | SQL | Rust |
-//! |--|--|
-//! | `SmallInt` | `i16` |
-//! | `Integer` | `i32` |
-//! | `Int` | `i32` |
-//! | `BigInt` | `i64` |
-//! | `VarChar` | `String` |
-//! | `Text` | `String` |
+//! | SQL        | Rust     |
+//! | ---------- | -------- |
+//! | `SmallInt` | `i16`    |
+//! | `Integer`  | `i32`    |
+//! | `Int`      | `i32`    |
+//! | `BigInt`   | `i64`    |
+//! | `VarChar`  | `String` |
+//! | `Text`     | `String` |
 //!
 //!  The macro then generates three impls: a `FromSql` impl, an `ToSql` impl and a
 //! `TryFrom` impl, which allow conversion between the Sql type an the enum (`FromSql` and `ToSql`),
@@ -19,9 +19,10 @@
 //! ```rust
 //! #[macro_use] extern crate diesel;
 //! use diesel_enum::DbEnum;
-//! use diesel::sql_types::SmallInt;
+//! use diesel::{deserialize::FromSqlRow, sql_types::SmallInt};
 //!
-//! #[derive(Debug)]
+//! #[derive(Debug, thiserror::Error)]
+//! #[error("CustomError: {msg}, {status}")]
 //! pub struct CustomError {
 //!     msg: String,
 //!     status: u16,
@@ -36,7 +37,7 @@
 //!     }
 //! }
 //!
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, DbEnum)]
 //! #[diesel(sql_type = SmallInt)]
 //! #[diesel_enum(error_fn = CustomError::not_found)]
 //! #[diesel_enum(error_type = CustomError)]
@@ -50,7 +51,7 @@
 //! Alternatively you can use strings, with will be cast to lowercase. (e.g. `Status::Ready` will be
 //! stored as `"ready"` in the database):
 //! ```rust
-//! #[derive(Debug, Clone, Copy, PartialEq, Eq, diesel::deserialize::FromSqlRow, DbEnum)]
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, FromSqlRow, DbEnum)]
 //! #[diesel(sql_type = VarChar)]
 //! #[diesel_enum(error_fn = CustomError::not_found)]
 //! #[diesel_enum(error_type = CustomError)]
@@ -91,7 +92,7 @@ impl<'a> MacroState<'a> {
             .find(|a| a.path.get_ident().map(|i| i == "val").unwrap_or(false))
             .map(|a| a.tokens.to_string())?;
         let trimmed = val[1..].trim();
-        Some(syn::parse_str(trimmed).unwrap())
+        syn::parse_str(trimmed).ok()
     }
 
     fn rust_type(sql_type: &syn::Ident) -> Result<syn::Ident, proc_macro2::TokenStream> {
@@ -225,9 +226,10 @@ impl<'a> MacroState<'a> {
                 Db: diesel::backend::Backend,
                 #rust_type: FromSql<#sql_type, Db>
             {
-                fn from_sql(bytes: diesel::backend::RawValue<Db>) -> deserialize::Result<Self> {
+                fn from_sql(bytes: <Db as diesel::backend::Backend>::RawValue<'_>) -> deserialize::Result<Self> {
                     let s = <#rust_type as FromSql<#sql_type, Db>>::from_sql(bytes)?;
-                    Ok(s.try_into().unwrap())
+                    let v = s.try_into()?;
+                    Ok(v)
                 }
             }
         }

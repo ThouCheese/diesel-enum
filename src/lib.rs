@@ -169,7 +169,7 @@ impl<'a> MacroState<'a> {
         }
     }
 
-    fn into_impl(&self) -> proc_macro2::TokenStream {
+    fn as_impl(&self) -> proc_macro2::TokenStream {
         let span = proc_macro2::Span::call_site();
         let rust_type = &self.rust_type;
         let name = &self.name;
@@ -214,7 +214,7 @@ impl<'a> MacroState<'a> {
         }
     }
 
-    fn from_sql(&self) -> proc_macro2::TokenStream {
+    fn impl_for_from_sql(&self) -> proc_macro2::TokenStream {
         let sql_type = &self.sql_type;
         let rust_type = &self.rust_type;
         let name = &self.name;
@@ -293,8 +293,8 @@ impl<'a> MacroState<'a> {
     }
 }
 
-fn get_attr_ident<'a>(
-    attrs: &'a [syn::Attribute],
+fn get_attr_ident(
+    attrs: &[syn::Attribute],
     name: &str,
 ) -> Result<syn::Ident, proc_macro2::TokenStream> {
     let stream = attrs
@@ -366,10 +366,10 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         error_fn,
         error_type,
     };
-    let from_sql = state.from_sql();
+    let impl_for_from_sql = state.impl_for_from_sql();
     let to_sql = state.to_sql();
     let try_from = state.try_from();
-    let into = state.into_impl();
+    let into = state.as_impl();
     let name = state.name;
     let mod_name = syn::Ident::new(
         &format!("__impl_db_enum_{}", name),
@@ -407,7 +407,7 @@ pub fn db_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             };
 
             #[automatically_derived]
-            #from_sql
+            #impl_for_from_sql
 
             #[automatically_derived]
             #to_sql

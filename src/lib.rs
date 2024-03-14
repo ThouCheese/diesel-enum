@@ -79,6 +79,36 @@
 //!     Pending,
 //! }
 //! ```
+//! 
+//! And one more option is to define variant discriminant:
+//! 
+//! ```rust
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+//! #[diesel(sql_type = VarChar)]
+//! #[diesel_enum(error_fn = CustomError::not_found)]
+//! #[diesel_enum(error_type = CustomError)]
+//! pub enum Status {
+//!     /// Will be represented as `"reddy"`.
+//!     Ready = "reddy",
+//!     /// Will be represented as `"pending"`.
+//!     Pending = "pending",
+//! }
+//! ```
+//! 
+//! It also works for numbers as discriminant value:
+//! 
+//! ```rust
+//! #[derive(Debug, Clone, Copy, PartialEq, Eq, AsExpression, FromSqlRow, DbEnum)]
+//! #[diesel(sql_type = SmallInt)]
+//! #[diesel_enum(error_fn = CustomError::not_found)]
+//! #[diesel_enum(error_type = CustomError)]
+//! pub enum Status {
+//!     /// Will be represented as `1`.
+//!     Ready = 1,
+//!     /// Will be represented as `99`.
+//!     Pending = 99,
+//! }
+//! ```
 
 use quote::quote;
 use syn::spanned::Spanned;
